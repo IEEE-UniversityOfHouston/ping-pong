@@ -1,0 +1,147 @@
+#include <Adafruit_GFX.h>
+#include <Adafruit_SSD1306.h>
+
+// OLED setup
+#define SCREEN_WIDTH 128
+#define SCREEN_HEIGHT 64
+#define OLED_RESET    -1
+Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
+
+// Game constants
+#define PADDLE_WIDTH 3
+#define PADDLE_HEIGHT 15
+#define BALL_SIZE 3
+
+// Control pins
+#define POT_LEFT A0
+#define POT_RIGHT A1
+#define START_BUTTON A2
+
+// Paddle positions
+int paddleLeftY = 0;
+int paddleRightY = 0;
+
+// Ball properties
+float ballX = SCREEN_WIDTH / 2;
+float ballY = SCREEN_HEIGHT / 2;
+float ballSpeedX = -3;
+float ballSpeedY = 0;
+
+// Score
+int scoreLeft = 0;
+int scoreRight = 0;
+
+// Game state
+bool gameStarted = false;
+
+void setup() {
+  pinMode(START_BUTTON, INPUT); // Button with pull-down resistor
+  Serial.begin(115200);
+
+  if (!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) {
+    Serial.println(F("SSD1306 allocation failed"));
+    for (;;);
+  }
+
+  display.clearDisplay();
+  display.display();
+}
+
+void loop() {
+  if (!gameStarted) {
+    showStartMenu();
+    if (digitalRead(START_BUTTON) == HIGH) {
+      delay(200); // debounce
+      gameStarted = true;
+    }
+    return;
+  }
+
+  // Read potentiometers and map to paddle Y positions
+  int potLeft = analogRead(POT_LEFT);
+  paddleLeftY = map(potLeft, 0, 1023, 0, SCREEN_HEIGHT - PADDLE_HEIGHT);
+
+  int potRight = analogRead(POT_RIGHT);
+  paddleRightY = map(potRight, 0, 1023, 0, SCREEN_HEIGHT - PADDLE_HEIGHT);
+
+  // Move ball
+  ballX += ballSpeedX;
+  ballY += ballSpeedY;
+
+  // Bounce off top/bottom
+  if (ballY <= 0 || ballY >= SCREEN_HEIGHT - BALL_SIZE) {
+    ballSpeedY = -ballSpeedY;
+  }
+
+  // Left paddle collision
+  if (ballX <= PADDLE_WIDTH &&
+      ballY + BALL_SIZE >= paddleLeftY && ballY <= paddleLeftY + PADDLE_HEIGHT) {
+    float hitPos = (ballY + BALL_SIZE / 2.0 - (paddleLeftY + PADDLE_HEIGHT / 2.0)) / (PADDLE_HEIGHT / 2.0);
+    ballSpeedY = hitPos * 3.5;
+    ballSpeedX = abs(ballSpeedX); // bounce right
+  }
+
+  // Right paddle collision
+  if (ballX >= SCREEN_WIDTH - PADDLE_WIDTH - BALL_SIZE &&
+      ballY + BALL_SIZE >= paddleRightY && ballY <= paddleRightY + PADDLE_HEIGHT) {
+    float hitPos = (ballY + BALL_SIZE / 2.0 - (paddleRightY + PADDLE_HEIGHT / 2.0)) / (PADDLE_HEIGHT / 2.0);
+    ballSpeedY = hitPos * 3.5;
+    ballSpeedX = -abs(ballSpeedX); // bounce left
+  }
+
+  // Scoring logic: fully off screen
+  if (ballX + BALL_SIZE < 0) {
+    scoreRight++;
+    resetBall(-1);
+  } else if (ballX > SCREEN_WIDTH) {
+    scoreLeft++;
+    resetBall(1);
+  }
+
+  // Draw everything
+  display.clearDisplay();
+
+  // Draw paddles
+  display.fillRect(0, paddleLeftY, PADDLE_WIDTH, PADDLE_HEIGHT, WHITE);
+  display.fillRect(SCREEN_WIDTH - PADDLE_WIDTH, paddleRightY, PADDLE_WIDTH, PADDLE_HEIGHT, WHITE);
+
+  // Draw ball
+  display.fillRect((int)ballX, (int)ballY, BALL_SIZE, BALL_SIZE, WHITE);
+
+  // Draw score
+  display.setTextSize(1);
+  display.setTextColor(WHITE);
+  display.setCursor(2, 0);
+  display.print(scoreLeft);
+  display.setCursor(SCREEN_WIDTH - 6 * String(scoreRight).length() - 2, 0);
+  display.print(scoreRight);
+
+  display.display();
+  delay(20);
+}
+
+void resetBall(int direction) {
+  ballX = SCREEN_WIDTH / 2;
+  ballY = SCREEN_HEIGHT / 2;
+  ballSpeedX = direction * 3;
+  ballSpeedY = 0;
+}
+
+void showStartMenu() {
+  display.clearDisplay();
+  display.setTextSize(1);
+  display.setTextColor(WHITE);
+
+  String msg = "Press Start to Play";
+  int16_t x1, y1;
+  uint16_t w, h;
+
+  display.getTextBounds(msg, 0, 0, &x1, &y1, &w, &h);
+
+  int16_t xCentered = (SCREEN_WIDTH - w) / 2;
+  int16_t yCentered = (SCREEN_HEIGHT - h) / 2;
+
+  display.setCursor(xCentered, yCentered);
+  display.println(msg);
+  display.display();
+}
